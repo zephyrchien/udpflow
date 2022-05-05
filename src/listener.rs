@@ -1,15 +1,13 @@
 use std::io::{Result, Error, ErrorKind};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::HashMap;
 
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc::{self, Sender};
+use tokio::sync::mpsc;
 
 use crate::UdpStreamL;
 
-pub(crate) type Packet = Vec<u8>;
-pub(crate) type SockMap = HashMap<SocketAddr, Sender<Packet>>;
+use crate::sockmap::{SockMap, Packet};
 
 pub struct UdpListener {
     socket: Arc<UdpSocket>,

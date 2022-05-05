@@ -8,7 +8,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::mpsc::Receiver;
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
-use crate::Packet;
+use crate::sockmap::Packet;
 
 pub struct UdpStreamL {
     rx: Receiver<Packet>,

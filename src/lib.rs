@@ -1,3 +1,4 @@
+mod sockmap;
 mod streaml;
 mod streamr;
 mod listener;
