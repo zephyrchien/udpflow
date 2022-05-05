@@ -8,9 +8,7 @@ pub(crate) type Packet = Vec<u8>;
 pub(crate) struct SockMap(Arc<RwLock<HashMap<SocketAddr, Sender<Packet>>>>);
 
 impl SockMap {
-    pub fn new() -> Self {
-        Self(Arc::new(RwLock::new(HashMap::new())))
-    }
+    pub fn new() -> Self { Self(Arc::new(RwLock::new(HashMap::new()))) }
 
     #[inline]
     pub fn get(&self, addr: &SocketAddr) -> Option<Sender<Packet>> {

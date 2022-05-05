@@ -3,6 +3,6 @@ mod streaml;
 mod streamr;
 mod listener;
 
-pub use listener::*;
-pub use streaml::*;
-pub use streamr::*;
+pub use listener::UdpListener;
+pub use streaml::UdpStreamLocal;
+pub use streamr::UdpStreamRemote;

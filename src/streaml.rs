@@ -10,13 +10,13 @@ use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
 use crate::sockmap::Packet;
 
-pub struct UdpStreamL {
+pub struct UdpStreamLocal {
     rx: Receiver<Packet>,
     socket: Arc<UdpSocket>,
     addr: SocketAddr,
 }
 
-impl UdpStreamL {
+impl UdpStreamLocal {
     pub(crate) fn new(rx: Receiver<Packet>, socket: Arc<UdpSocket>, addr: SocketAddr) -> Self {
         Self { rx, socket, addr }
     }
@@ -31,7 +31,7 @@ impl UdpStreamL {
     pub const fn inner_socket(&self) -> &Arc<UdpSocket> { &self.socket }
 }
 
-impl AsyncRead for UdpStreamL {
+impl AsyncRead for UdpStreamLocal {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -50,7 +50,7 @@ impl AsyncRead for UdpStreamL {
     }
 }
 
-impl AsyncWrite for UdpStreamL {
+impl AsyncWrite for UdpStreamLocal {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         let this = self.get_mut();
         this.socket.poll_send_to(cx, buf, this.addr)

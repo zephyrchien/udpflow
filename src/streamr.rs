@@ -6,12 +6,12 @@ use std::task::{Context, Poll};
 use tokio::net::UdpSocket;
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
-pub struct UdpStreamR {
+pub struct UdpStreamRemote {
     socket: UdpSocket,
     addr: SocketAddr,
 }
 
-impl UdpStreamR {
+impl UdpStreamRemote {
     #[inline]
     pub const fn new(socket: UdpSocket, addr: SocketAddr) -> Self { Self { socket, addr } }
 
@@ -25,7 +25,7 @@ impl UdpStreamR {
     pub const fn inner_socket(&self) -> &UdpSocket { &self.socket }
 }
 
-impl AsyncRead for UdpStreamR {
+impl AsyncRead for UdpStreamRemote {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -38,7 +38,7 @@ impl AsyncRead for UdpStreamR {
     }
 }
 
-impl AsyncWrite for UdpStreamR {
+impl AsyncWrite for UdpStreamRemote {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         let this = self.get_mut();
         this.socket.poll_send_to(cx, buf, this.addr)
