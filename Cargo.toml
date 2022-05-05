@@ -1,0 +1,13 @@
+[package]
+name = "udpflow"
+version = "0.1.0"
+authors = ["zephyr <i@zephyr.moe>"]
+description = "Stream API for tokio-udp."
+repository = "https://github.com/zephyrchien/udpflow"
+readme = "README.md"
+documentation = "https://docs.rs/udpflow"
+keywords = ["udp", "uot", "stream"]
+edition = "2021"
+license = "MIT"
+
+[dependencies]
