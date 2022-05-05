@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use tokio::sync::mpsc::Sender;
 
 pub(crate) type Packet = Vec<u8>;
+
+#[derive(Clone)]
 pub(crate) struct SockMap(Arc<RwLock<HashMap<SocketAddr, Sender<Packet>>>>);
 
 impl SockMap {

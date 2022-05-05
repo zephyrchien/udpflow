@@ -1,19 +1,30 @@
 use std::io::Result;
 use std::net::SocketAddr;
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::net::UdpSocket;
+use tokio::time::{sleep, Sleep, Instant};
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
+
+use crate::get_timeout;
 
 pub struct UdpStreamRemote {
     socket: UdpSocket,
+    timeout: Pin<Box<Sleep>>,
     addr: SocketAddr,
 }
 
 impl UdpStreamRemote {
     #[inline]
-    pub const fn new(socket: UdpSocket, addr: SocketAddr) -> Self { Self { socket, addr } }
+    pub fn new(socket: UdpSocket, addr: SocketAddr) -> Self {
+        Self {
+            socket,
+            addr,
+            timeout: Box::pin(sleep(get_timeout())),
+        }
+    }
 
     #[inline]
     pub const fn peer_addr(&self) -> SocketAddr { self.addr }
@@ -31,10 +42,21 @@ impl AsyncRead for UdpStreamRemote {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<()>> {
-        self.get_mut()
-            .socket
-            .poll_recv_from(cx, buf)
-            .map(|x| x.map(|_| ()))
+        let this = self.get_mut();
+
+        if let Poll::Ready(x) = this.socket.poll_recv_from(cx, buf) {
+            // reset timer
+            this.timeout.as_mut().reset(Instant::now() + get_timeout());
+
+            return Poll::Ready(x.map(|_| ()));
+        }
+
+        // EOF
+        if this.timeout.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Ok(()));
+        }
+
+        Poll::Pending
     }
 }
 

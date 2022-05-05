@@ -11,4 +11,4 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "net", "sync"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync"] }

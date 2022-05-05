@@ -1,24 +1,40 @@
 use std::io::Result;
 use std::sync::Arc;
 use std::net::SocketAddr;
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::net::UdpSocket;
+use tokio::time::{sleep, Sleep, Instant};
 use tokio::sync::mpsc::Receiver;
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
-use crate::sockmap::Packet;
+use crate::sockmap::{SockMap, Packet};
+use crate::get_timeout;
 
 pub struct UdpStreamLocal {
     rx: Receiver<Packet>,
     socket: Arc<UdpSocket>,
+    timeout: Pin<Box<Sleep>>,
+    sockmap: SockMap,
     addr: SocketAddr,
 }
 
 impl UdpStreamLocal {
-    pub(crate) fn new(rx: Receiver<Packet>, socket: Arc<UdpSocket>, addr: SocketAddr) -> Self {
-        Self { rx, socket, addr }
+    pub(crate) fn new(
+        rx: Receiver<Packet>,
+        socket: Arc<UdpSocket>,
+        sockmap: SockMap,
+        addr: SocketAddr,
+    ) -> Self {
+        Self {
+            rx,
+            socket,
+            addr,
+            sockmap,
+            timeout: Box::pin(sleep(get_timeout())),
+        }
     }
 
     #[inline]
@@ -31,22 +47,33 @@ impl UdpStreamLocal {
     pub const fn inner_socket(&self) -> &Arc<UdpSocket> { &self.socket }
 }
 
+impl Drop for UdpStreamLocal {
+    fn drop(&mut self) { self.sockmap.remove(&self.addr); }
+}
+
 impl AsyncRead for UdpStreamLocal {
     fn poll_read(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<Result<()>> {
-        use Poll::*;
+        let this = self.get_mut();
 
-        match self.get_mut().rx.poll_recv(cx) {
-            Ready(Some(pkt)) => {
-                buf.put_slice(&pkt);
-                Ready(Ok(()))
-            }
-            Ready(None) => Ready(Ok(())),
-            Pending => Pending,
+        if let Poll::Ready(Some(pkt)) = this.rx.poll_recv(cx) {
+            buf.put_slice(&pkt);
+
+            // reset timer
+            this.timeout.as_mut().reset(Instant::now() + get_timeout());
+
+            return Poll::Ready(Ok(()));
         }
+
+        // EOF
+        if this.timeout.as_mut().poll(cx).is_ready() {
+            return Poll::Ready(Ok(()));
+        }
+
+        Poll::Pending
     }
 }
 

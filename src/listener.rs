@@ -39,7 +39,7 @@ impl UdpListener {
             let (tx, rx) = mpsc::channel::<Packet>(4);
             self.sockmap.insert(addr, tx);
 
-            let stream = UdpStreamLocal::new(rx, self.socket.clone(), addr);
+            let stream = UdpStreamLocal::new(rx, self.socket.clone(), self.sockmap.clone(), addr);
             return Ok((stream, addr));
         }
     }
