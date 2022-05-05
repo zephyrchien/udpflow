@@ -13,16 +13,16 @@ pub struct UdpStreamR {
 
 impl UdpStreamR {
     #[inline]
-    pub fn new(socket: UdpSocket, addr: SocketAddr) -> Self { Self { socket, addr } }
+    pub const fn new(socket: UdpSocket, addr: SocketAddr) -> Self { Self { socket, addr } }
 
     #[inline]
-    pub fn peer_addr(&self) -> SocketAddr { self.addr }
+    pub const fn peer_addr(&self) -> SocketAddr { self.addr }
 
     #[inline]
     pub fn local_addr(&self) -> SocketAddr { self.socket.local_addr().unwrap() }
 
     #[inline]
-    pub fn inner_socket(&self) -> &UdpSocket { &self.socket }
+    pub const fn inner_socket(&self) -> &UdpSocket { &self.socket }
 }
 
 impl AsyncRead for UdpStreamR {

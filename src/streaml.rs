@@ -22,13 +22,13 @@ impl UdpStreamL {
     }
 
     #[inline]
-    pub fn peer_addr(&self) -> SocketAddr { self.addr }
+    pub const fn peer_addr(&self) -> SocketAddr { self.addr }
 
     #[inline]
     pub fn local_addr(&self) -> SocketAddr { self.socket.local_addr().unwrap() }
 
     #[inline]
-    pub fn inner_socket(&self) -> &Arc<UdpSocket> { &self.socket }
+    pub const fn inner_socket(&self) -> &Arc<UdpSocket> { &self.socket }
 }
 
 impl AsyncRead for UdpStreamL {
