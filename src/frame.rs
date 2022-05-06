@@ -103,15 +103,16 @@ where
                     let n = ready!(Pin::new(&mut this.io).poll_read(cx, &mut buf_limit))
                         .map(|_| buf_limit.filled().len())?;
 
+                    buf.advance(n);
                     if n == 0 {
                         this.rd = State::Fin;
+                        return Poll::Ready(Ok(()));
                     } else if n as u16 == len {
                         this.rd = State::Len;
+                        return Poll::Ready(Ok(()));
                     } else {
                         this.rd = State::Data(len - n as u16);
                     };
-                    buf.advance(n);
-                    return Poll::Ready(Ok(()));
                 }
                 State::Fin => return Poll::Ready(Ok(())),
             }
