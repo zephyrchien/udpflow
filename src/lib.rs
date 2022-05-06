@@ -1,8 +1,9 @@
-pub mod frame;
 mod sockmap;
 mod streaml;
 mod streamr;
 mod listener;
+
+pub mod frame;
 
 pub use listener::UdpListener;
 pub use streaml::UdpStreamLocal;
