@@ -1,4 +1,4 @@
-use std::io::{Result, Error, ErrorKind};
+use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -29,9 +29,7 @@ impl UdpListener {
 
             // existed session
             if let Some(tx) = self.sockmap.get(&addr) {
-                if let Err(e) = tx.send(Vec::from(&buf[..n])).await {
-                    return Err(Error::new(ErrorKind::Other, e));
-                }
+                let _ = tx.send(Vec::from(&buf[..n])).await;
                 continue;
             }
 
