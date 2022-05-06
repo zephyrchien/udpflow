@@ -1,0 +1,7 @@
++------+----------+
+| LEN  |   DATA   |
++------+----------+
+|  2   | Variable |
++------+----------+
+
+*LEN is a 16-bit unsigned integer in big endian byte order.

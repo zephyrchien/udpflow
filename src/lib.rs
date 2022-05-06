@@ -1,3 +1,4 @@
+pub mod frame;
 mod sockmap;
 mod streaml;
 mod streamr;
