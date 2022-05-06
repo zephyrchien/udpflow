@@ -10,6 +10,9 @@ pub use streaml::UdpStreamLocal;
 pub use streamr::UdpStreamRemote;
 pub use frame::UotStream;
 
+/// Re-export from tokio-udp. 
+pub use tokio::net::UdpSocket;
+
 mod statics {
     use std::time::Duration;
 
