@@ -12,10 +12,10 @@
 //! LEN is a 16-bit unsigned integer in big endian byte order.
 //!
 
-use std::io::{IoSlice, Result};
+use std::io::Result;
+use std::io::IoSlice;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::marker::PhantomData;
 
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
@@ -39,101 +39,35 @@ impl State {
     pub const fn new() -> Self { State::Len }
 }
 
-pub struct DirectRead;
-pub struct DirectWrite;
-pub struct FramedRead;
-pub struct FramedWrite;
-
-pub struct UotStream<T, R = DirectRead, W = DirectWrite> {
+pub struct UotStream<T> {
     io: T,
     rd: State,
     wr: State,
-    __rd: PhantomData<R>,
-    __wr: PhantomData<W>,
 }
 
-impl<T, R, W> UotStream<T, R, W> {
+impl<T> UotStream<T> {
     #[inline]
     pub const fn new(io: T) -> Self {
         Self {
             io,
             rd: State::new(),
             wr: State::new(),
-            __rd: PhantomData,
-            __wr: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn use_framed_read(self) -> UotStream<T, FramedRead, W> {
-        UotStream {
-            io: self.io,
-            rd: self.rd,
-            wr: self.wr,
-            __rd: PhantomData,
-            __wr: PhantomData,
-        }
-    }
-
-    #[inline]
-    pub fn use_framed_write(self) -> UotStream<T, R, FramedWrite> {
-        UotStream {
-            io: self.io,
-            rd: self.rd,
-            wr: self.wr,
-            __rd: PhantomData,
-            __wr: PhantomData,
         }
     }
 }
 
-impl<T, R, W> AsRef<T> for UotStream<T, R, W> {
+impl<T> AsRef<T> for UotStream<T> {
     #[inline]
     fn as_ref(&self) -> &T { &self.io }
 }
 
-impl<T, R, W> AsMut<T> for UotStream<T, R, W> {
+impl<T> AsMut<T> for UotStream<T> {
     #[inline]
     fn as_mut(&mut self) -> &mut T { &mut self.io }
 }
 
-// default impl
-
 impl<T> AsyncRead for UotStream<T>
 where
-    T: AsyncRead + Unpin,
-{
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        Pin::new(&mut self.get_mut().io).poll_read(cx, buf)
-    }
-}
-
-impl<T> AsyncWrite for UotStream<T>
-where
-    T: AsyncWrite + Unpin,
-{
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
-        Pin::new(&mut self.get_mut().io).poll_write(cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.get_mut().io).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.get_mut().io).poll_shutdown(cx)
-    }
-}
-
-// framed impl
-
-impl<T, W> AsyncRead for UotStream<T, FramedRead, W>
-where
-    W: Unpin,
     T: AsyncRead + Unpin,
 {
     fn poll_read(
@@ -183,9 +117,8 @@ where
     }
 }
 
-impl<T, R> AsyncWrite for UotStream<T, R, FramedWrite>
+impl<T> AsyncWrite for UotStream<T>
 where
-    R: Unpin,
     T: AsyncWrite + Unpin,
 {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
