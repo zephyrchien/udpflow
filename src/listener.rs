@@ -41,7 +41,8 @@ impl UdpListener {
             }
 
             // new session
-            let (tx, rx) = mpsc::channel::<Packet>(4);
+            let (tx, rx) = mpsc::channel::<Packet>(32);
+            let _ = tx.send(Vec::from(&buf[..n])).await;
             self.sockmap.insert(addr, tx);
 
             let stream = UdpStreamLocal::new(rx, self.socket.clone(), self.sockmap.clone(), addr);

@@ -40,11 +40,11 @@ impl State {
 }
 
 /// Framed UoT stream.
-/// 
+///
 /// This is a simple wrapper over the underlying IO source.
-/// 
+///
 /// A `Read` call always waits for a complete frame, and then decapsulate it.
-/// 
+///
 /// A `Write` call will encapsulate the buffer in a frame. It only ensures `LEN` is sent,
 /// the left `DATA` may be partially sent, which requires subsequent `Write` calls
 /// to finish sending the entire frame. Usually this could be achieved by `write_all`.
