@@ -29,7 +29,7 @@ impl UdpListener {
     /// When receiving a packet from a known peer, this function does not return,
     /// and the packet will be copied then sent to the associated
     /// [`UdpStreamLocal`](super::UdpStreamLocal).  
-    pub async fn accept(&mut self, buf: &mut [u8]) -> Result<(UdpStreamLocal, SocketAddr)> {
+    pub async fn accept(&self, buf: &mut [u8]) -> Result<(UdpStreamLocal, SocketAddr)> {
         loop {
             let (n, addr) = self.socket.recv_from(buf).await?;
             debug_assert!(n != 0);
