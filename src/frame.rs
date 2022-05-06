@@ -98,17 +98,19 @@ where
                     this.rd = State::Data(u16::from_be_bytes(len_be));
                 }
                 State::Data(len) => {
-                    let n = ready!(Pin::new(&mut this.io).poll_read(cx, buf))
-                        .map(|_| buf.filled().len())? as u16;
+                    debug_assert!(len as usize <= buf.remaining());
+                    let mut buf_limit = ReadBuf::new(buf.initialize_unfilled_to(len as usize));
+                    let n = ready!(Pin::new(&mut this.io).poll_read(cx, &mut buf_limit))
+                        .map(|_| buf_limit.filled().len())?;
 
                     if n == 0 {
                         this.rd = State::Fin;
-                    } else if n == len {
+                    } else if n as u16 == len {
                         this.rd = State::Len;
                     } else {
-                        this.rd = State::Data(len - n);
+                        this.rd = State::Data(len - n as u16);
                     };
-
+                    buf.advance(n);
                     return Poll::Ready(Ok(()));
                 }
                 State::Fin => return Poll::Ready(Ok(())),
