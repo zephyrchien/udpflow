@@ -48,7 +48,10 @@ impl UdpStreamLocal {
 }
 
 impl Drop for UdpStreamLocal {
-    fn drop(&mut self) { self.sockmap.remove(&self.addr); }
+    fn drop(&mut self) {
+        self.sockmap.remove(&self.addr);
+        // left elements are popped
+    }
 }
 
 impl AsyncRead for UdpStreamLocal {
@@ -88,6 +91,7 @@ impl AsyncWrite for UdpStreamLocal {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<()>> {
+        self.get_mut().rx.close();
         Poll::Ready(Ok(()))
     }
 }
