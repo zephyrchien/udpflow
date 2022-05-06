@@ -12,3 +12,6 @@ license = "MIT"
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "net", "time", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
