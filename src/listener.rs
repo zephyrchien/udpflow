@@ -9,12 +9,14 @@ use crate::UdpStreamLocal;
 
 use crate::sockmap::{SockMap, Packet};
 
+/// Udp packet listener.
 pub struct UdpListener {
     socket: Arc<UdpSocket>,
     sockmap: SockMap,
 }
 
 impl UdpListener {
+    /// Create from a **bound** udp socket.
     pub fn new(socket: UdpSocket) -> Self {
         Self {
             socket: Arc::new(socket),
@@ -22,6 +24,11 @@ impl UdpListener {
         }
     }
 
+    /// Accept a new stream.
+    ///
+    /// When receiving a packet from a known peer, this function does not return,
+    /// and the packet will be copied then sent to the associated
+    /// [`UdpStreamLocal`](super::UdpStreamLocal).  
     pub async fn accept(&mut self, buf: &mut [u8]) -> Result<(UdpStreamLocal, SocketAddr)> {
         loop {
             let (n, addr) = self.socket.recv_from(buf).await?;

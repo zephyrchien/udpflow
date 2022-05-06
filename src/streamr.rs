@@ -10,6 +10,11 @@ use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
 use crate::get_timeout;
 
+/// Udp stream which is actively established.
+///
+/// A `Read` call times out when there is no packet received
+/// during a period of time. This is treated as `EOF`, and
+/// a `Ok(0)` will be returned.
 pub struct UdpStreamRemote {
     socket: UdpSocket,
     timeout: Pin<Box<Sleep>>,
@@ -17,6 +22,7 @@ pub struct UdpStreamRemote {
 }
 
 impl UdpStreamRemote {
+    /// Create from a **bound** udp socket.
     #[inline]
     pub fn new(socket: UdpSocket, addr: SocketAddr) -> Self {
         Self {
@@ -26,12 +32,15 @@ impl UdpStreamRemote {
         }
     }
 
+    /// Get peer sockaddr.
     #[inline]
     pub const fn peer_addr(&self) -> SocketAddr { self.addr }
 
+    /// Get local sockaddr.
     #[inline]
     pub fn local_addr(&self) -> SocketAddr { self.socket.local_addr().unwrap() }
 
+    /// Get inner udp socket.
     #[inline]
     pub const fn inner_socket(&self) -> &UdpSocket { &self.socket }
 }

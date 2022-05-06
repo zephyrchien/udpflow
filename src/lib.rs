@@ -8,6 +8,7 @@ pub mod frame;
 pub use listener::UdpListener;
 pub use streaml::UdpStreamLocal;
 pub use streamr::UdpStreamRemote;
+pub use frame::UotStream;
 
 mod statics {
     use std::time::Duration;

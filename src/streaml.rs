@@ -13,6 +13,11 @@ use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 use crate::sockmap::{SockMap, Packet};
 use crate::get_timeout;
 
+/// Udp stream accepted from local listener.
+///
+/// A `Read` call times out when there is no packet received
+/// during a period of time. This is treated as `EOF`, and
+/// a `Ok(0)` will be returned.
 pub struct UdpStreamLocal {
     rx: Receiver<Packet>,
     socket: Arc<UdpSocket>,
@@ -37,12 +42,15 @@ impl UdpStreamLocal {
         }
     }
 
+    /// Get peer sockaddr.
     #[inline]
     pub const fn peer_addr(&self) -> SocketAddr { self.addr }
 
+    /// Get local sockaddr.
     #[inline]
     pub fn local_addr(&self) -> SocketAddr { self.socket.local_addr().unwrap() }
 
+    /// Get inner udp socket.
     #[inline]
     pub const fn inner_socket(&self) -> &Arc<UdpSocket> { &self.socket }
 }
