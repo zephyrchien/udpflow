@@ -153,6 +153,7 @@ where
                         return Poll::Ready(Ok(0));
                     }
                     // write partial len
+                    #[allow(clippy::comparison_chain)]
                     if total < 2 {
                         iovec[0] = IoSlice::new(&len_be[total..]);
                         continue;
