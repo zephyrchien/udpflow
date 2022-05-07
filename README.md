@@ -1,5 +1,8 @@
 # UDPflow
 
+[![crates.io](https://img.shields.io/crates/v/udpflow.svg)](https://crates.io/crates/udpflow)
+[![Released API docs](https://docs.rs/udpflow/badge.svg)](https://docs.rs/udpflow)
+
 Stream API for tokio-udp.
 
 ## TCP-like UDP stream
