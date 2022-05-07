@@ -26,6 +26,8 @@ impl UdpListener {
 
     /// Accept a new stream.
     ///
+    /// A listener must be continuously polled to recv packets or accept new streams.
+    ///
     /// When receiving a packet from a known peer, this function does not return,
     /// and the packet will be copied then sent to the associated
     /// [`UdpStreamLocal`](super::UdpStreamLocal).  
