@@ -12,14 +12,15 @@
 //! LEN is a 16-bit unsigned integer in big endian byte order.
 //!
 
-use std::cmp::Ordering;
 use std::io::Result;
 use std::io::IoSlice;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::io::BufReader;
 
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
+const MAX_DATAGRAM_PAYLOAD: usize = 65507;
 macro_rules! ready {
     ($e:expr $(,)?) => {
         match $e {
@@ -51,38 +52,36 @@ impl State {
 /// the left `DATA` may be partially sent, which requires subsequent `Write` calls
 /// to finish sending the entire frame. Usually this could be achieved by `write_all`.
 pub struct UotStream<T> {
-    io: T,
     rd: State,
     wr: State,
-    buf: Vec<u8>,
+    buf: BufReader<T>,
 }
 
-impl<T> UotStream<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> UotStream<T> {
     /// Create from underlying IO source.
     #[inline]
-    pub const fn new(io: T) -> Self {
+    pub fn new(io: T) -> Self {
         Self {
-            io,
             rd: State::new(),
             wr: State::Data(0),
-            buf: vec![],
+            buf: BufReader::new(io),
         }
     }
 }
 
-impl<T> AsRef<T> for UotStream<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> AsRef<T> for UotStream<T> {
     #[inline]
-    fn as_ref(&self) -> &T { &self.io }
+    fn as_ref(&self) -> &T { self.buf.get_ref() }
 }
 
-impl<T> AsMut<T> for UotStream<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> AsMut<T> for UotStream<T> {
     #[inline]
-    fn as_mut(&mut self) -> &mut T { &mut self.io }
+    fn as_mut(&mut self) -> &mut T { self.buf.get_mut() }
 }
 
 impl<T> AsyncRead for UotStream<T>
 where
-    T: AsyncRead + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin,
 {
     fn poll_read(
         self: Pin<&mut Self>,
@@ -92,61 +91,41 @@ where
         let this = self.get_mut();
 
         loop {
-            if !this.buf.is_empty() {
-                buf.put_slice(this.buf.as_slice());
-            };
-
-            let mut total = buf.filled().len();
-            if (matches!(this.rd, State::Len) && total < 2)
-                || matches!(this.rd, State::Data(len) if total < len as usize)
-            {
-                let n = ready!(Pin::new(&mut this.io).poll_read(cx, buf))
-                    .map(|_| buf.filled().len() - total)?;
-                // EOF
-                if n == 0 {
-                    return Poll::Ready(Ok(()));
-                }
-                total += n;
-            }
-
-            // make it immutable
-            let total = total;
-
-            // we can safely clear the buffer
-            this.buf.clear();
-
             match this.rd {
                 State::Len => {
-                    if total < 2 {
-                        this.buf.reserve_exact(total);
-                        this.buf.extend(buf.filled());
+                    let mut read_buf =
+                        ReadBuf::new(buf.initialize_unfilled_to(2 - buf.filled().len()));
+                    let n = ready!(Pin::new(&mut this.buf).poll_read(cx, &mut read_buf))
+                        .map(|_| read_buf.filled().len())?;
+                    if n == 0 {
+                        this.rd = State::Fin;
                         buf.clear();
+                        return Poll::Ready(Ok(()));
+                    }
+                    buf.advance(n);
+                    if buf.filled().len() < 2 {
                         continue;
                     }
-
-                    this.rd =
-                        State::Data(u16::from_be_bytes(buf.filled()[..2].try_into().unwrap()));
-
-                    if total > 2 {
-                        this.buf.reserve_exact(buf.filled().len() - 2);
-                        this.buf.extend(&buf.filled()[2..]);
-                    }
+                    this.rd = State::Data(u16::from_be_bytes(buf.filled().try_into().unwrap()));
                     buf.clear();
                 }
-                State::Data(len) => match total.cmp(&(len as usize)) {
-                    Ordering::Equal => {
-                        this.rd = State::Len;
+                State::Data(length) => {
+                    let mut read_buf = ReadBuf::new(buf.initialize_unfilled_to(length as usize));
+                    let n = ready!(Pin::new(&mut this.buf).poll_read(cx, &mut read_buf))
+                        .map(|_| read_buf.filled().len())?;
+                    if n == 0 {
+                        this.rd = State::Fin;
+                        buf.clear();
                         return Poll::Ready(Ok(()));
                     }
-                    Ordering::Less => {}
-                    Ordering::Greater => {
-                        this.buf.reserve_exact(buf.filled()[len as usize..].len());
-                        this.buf.extend(&buf.filled()[len as usize..]);
-                        buf.set_filled(len as usize);
-                        this.rd = State::Len;
-                        return Poll::Ready(Ok(()));
+                    buf.advance(n);
+                    if n != length as usize {
+                        this.rd = State::Data(length - n as u16);
+                        continue;
                     }
-                },
+                    this.rd = State::Len;
+                    return Poll::Ready(Ok(()));
+                }
                 State::Fin => return Poll::Ready(Ok(())),
             }
         }
@@ -155,10 +134,10 @@ where
 
 impl<T> AsyncWrite for UotStream<T>
 where
-    T: AsyncWrite + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin,
 {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
-        debug_assert!(buf.len() < 0xffff);
+        assert!(buf.len() <= MAX_DATAGRAM_PAYLOAD);
 
         let this = self.get_mut();
 
@@ -168,22 +147,18 @@ where
                     unreachable!();
                 }
                 State::Data(cursor) => {
-                    let n = if cursor < 2 {
+                    let (n, written_data) = if cursor < 2 {
                         let len_be = &(buf.len() as u16).to_be_bytes()[cursor as usize..];
                         let iovec = &mut [IoSlice::new(len_be), IoSlice::new(buf)][..];
-                        ready!(Pin::new(&mut this.io).poll_write_vectored(cx, iovec))?
-                    } else {
-                        ready!(Pin::new(&mut this.io).poll_write(cx, buf))?
-                    };
-
-                    let written_bytes = if cursor < 2 {
-                        if n + cursor as usize > 2 {
-                            n - (2 - cursor) as usize
+                        let n = ready!(Pin::new(&mut this.buf).poll_write_vectored(cx, iovec))?;
+                        if n as u16 + cursor < 2 {
+                            (n, 0)
                         } else {
-                            0
+                            (n, cursor as usize + n - 2)
                         }
                     } else {
-                        n
+                        let n = ready!(Pin::new(&mut this.buf).poll_write(cx, buf))?;
+                        (n, n)
                     };
 
                     if n == 0 {
@@ -192,15 +167,12 @@ where
                         return Poll::Ready(Ok(0));
                     }
 
-                    if written_bytes == buf.len() {
-                        this.wr = State::Data(0);
-                        return Poll::Ready(Ok(written_bytes));
-                    } else {
-                        this.wr = State::Data(n as u16 + cursor);
-
-                        if written_bytes != 0 {
-                            return Poll::Ready(Ok(written_bytes));
+                    this.wr = State::Data(cursor + n as u16);
+                    if written_data > 0 {
+                        if written_data == buf.len() {
+                            this.wr = State::Data(0);
                         }
+                        return Poll::Ready(Ok(written_data));
                     }
                 }
                 State::Fin => return Poll::Ready(Ok(0)),
@@ -209,11 +181,11 @@ where
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.get_mut().io).poll_flush(cx)
+        Pin::new(&mut self.get_mut().buf).poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<()>> {
-        Pin::new(&mut self.get_mut().io).poll_shutdown(cx)
+        Pin::new(&mut self.get_mut().buf).poll_shutdown(cx)
     }
 }
 
@@ -279,7 +251,7 @@ mod test {
     async fn read_framed() {
         async fn limit_at(rlimit: usize) {
             let dummy = vec![b'r'; 1024];
-            let mut buf: Vec<u8> = Vec::with_capacity(65536);
+            let mut buf: Vec<u8> = Vec::with_capacity(MAX_DATAGRAM_PAYLOAD);
             for i in 1..=512 {
                 <_ as Write>::write(&mut buf, &(i as u16).to_be_bytes()).unwrap();
                 <_ as Write>::write(&mut buf, &dummy[..i]).unwrap();
@@ -307,16 +279,16 @@ mod test {
         async fn limit_at(wlimit: usize) {
             let dummy = vec![b'w'; 1024];
             let mut stream = UotStream::new(SlowStream {
-                buf: Vec::with_capacity(65535),
+                buf: Vec::with_capacity(MAX_DATAGRAM_PAYLOAD),
                 rlimit: 0,
                 wlimit,
                 cursor: 0,
             });
             for i in 1..=512 {
-                let prev = stream.io.buf.len();
+                let prev = stream.buf.get_ref().buf.len();
                 stream.write_all(&dummy[..i]).await.unwrap();
-                let next = stream.io.buf.len();
-                let buf = &stream.io.buf;
+                let next = stream.buf.get_ref().buf.len();
+                let buf = &stream.buf.get_ref().buf;
                 assert_eq!(next - prev, i + 2);
                 assert_eq!(u16::from_be_bytes([buf[prev], buf[prev + 1]]), i as u16);
                 assert_eq!(&buf[prev + 2..next], &dummy[..i]);

@@ -11,7 +11,7 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-tokio = { version = "1", features = ["rt", "net", "time", "sync"] }
+tokio = { version = "1", features = ["rt", "net", "time", "sync", "io-util"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
