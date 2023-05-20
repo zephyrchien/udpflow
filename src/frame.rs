@@ -93,8 +93,10 @@ where
         loop {
             match this.rd {
                 State::Len => {
+                    let to_read_bytes = 2 - buf.filled().len();
+                    assert!(buf.remaining() >= to_read_bytes);
                     let mut read_buf =
-                        ReadBuf::new(buf.initialize_unfilled_to(2 - buf.filled().len()));
+                        ReadBuf::uninit(unsafe { &mut buf.unfilled_mut()[..to_read_bytes] });
                     let n = ready!(Pin::new(&mut this.buf).poll_read(cx, &mut read_buf))
                         .map(|_| read_buf.filled().len())?;
                     if n == 0 {
@@ -110,7 +112,9 @@ where
                     buf.clear();
                 }
                 State::Data(length) => {
-                    let mut read_buf = ReadBuf::new(buf.initialize_unfilled_to(length as usize));
+                    assert!(buf.remaining() >= length as usize);
+                    let mut read_buf =
+                        ReadBuf::uninit(unsafe { &mut buf.unfilled_mut()[..length as usize] });
                     let n = ready!(Pin::new(&mut this.buf).poll_read(cx, &mut read_buf))
                         .map(|_| read_buf.filled().len())?;
                     if n == 0 {
@@ -119,7 +123,7 @@ where
                         return Poll::Ready(Ok(()));
                     }
                     buf.advance(n);
-                    if n != length as usize {
+                    if n < length as usize {
                         this.rd = State::Data(length - n as u16);
                         continue;
                     }
@@ -140,6 +144,11 @@ where
         assert!(buf.len() <= MAX_DATAGRAM_PAYLOAD);
 
         let this = self.get_mut();
+
+        // Zero-sized datagrams are not allowed
+        if buf.is_empty() {
+            return Poll::Ready(Ok(0));
+        }
 
         loop {
             match this.wr {
