@@ -7,8 +7,8 @@
 //! use tokio::io::{AsyncReadExt, AsyncWriteExt};
 //! use udpflow::{UdpListener, UdpStreamLocal, UdpStreamRemote};
 //! async fn server() {
-//!     let socket = UdpSocket::bind("127.0.0.1:5000").await.unwrap();
-//!     let listener = UdpListener::new(socket);
+//!     let addr = "127.0.0.1:5000".parse().unwrap();
+//!     let listener = UdpListener::new(addr).unwrap();
 //!     let mut buf = vec![0u8; 0x2000];
 //!     // listener must be continuously polled to recv packets or accept new streams
 //!     while let Ok((stream, addr)) = listener.accept(&mut buf).await {
@@ -17,8 +17,9 @@
 //! }
 //!
 //! async fn handle(mut stream1: UdpStreamLocal) {
-//!     let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
-//!     let mut stream2 = UdpStreamRemote::new(socket, "127.0.0.1:10000".parse().unwrap());
+//!     let local = "127.0.0.1:0".parse().unwrap();
+//!     let remote = "127.0.0.1:10000".parse().unwrap();
+//!     let mut stream2 = UdpStreamRemote::new(local, remote).await.unwrap();
 //!     let mut buf = vec![0u8; 256];
 //!     stream1.read(&mut buf).await; stream2.write(&buf).await;
 //!     stream2.read(&mut buf).await; stream1.write(&buf).await;
@@ -75,3 +76,21 @@ mod statics {
 }
 
 pub use statics::{set_timeout, get_timeout};
+
+pub(crate) fn new_udp_socket(local_addr: std::net::SocketAddr) -> std::io::Result<UdpSocket> {
+    let udp_sock = socket2::Socket::new(
+        if local_addr.is_ipv4() {
+            socket2::Domain::IPV4
+        } else {
+            socket2::Domain::IPV6
+        },
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )?;
+    udp_sock.set_reuse_address(true)?;
+    udp_sock.set_reuse_port(true)?;
+    udp_sock.set_nonblocking(true)?;
+    udp_sock.bind(&socket2::SockAddr::from(local_addr))?;
+    let udp_sock: std::net::UdpSocket = udp_sock.into();
+    udp_sock.try_into()
+}

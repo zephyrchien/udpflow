@@ -8,7 +8,7 @@ use tokio::net::UdpSocket;
 use tokio::time::{sleep, Sleep, Instant};
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
-use crate::get_timeout;
+use crate::{get_timeout, new_udp_socket};
 
 /// Udp stream which is actively established.
 ///
@@ -18,23 +18,23 @@ use crate::get_timeout;
 pub struct UdpStreamRemote {
     socket: UdpSocket,
     timeout: Pin<Box<Sleep>>,
-    addr: SocketAddr,
 }
 
 impl UdpStreamRemote {
     /// Create from a **bound** udp socket.
     #[inline]
-    pub fn new(socket: UdpSocket, addr: SocketAddr) -> Self {
-        Self {
+    pub async fn new(local_addr: SocketAddr, remote_addr: SocketAddr) -> std::io::Result<Self> {
+        let socket = new_udp_socket(local_addr)?;
+        socket.connect(remote_addr).await?;
+        Ok(Self {
             socket,
-            addr,
             timeout: Box::pin(sleep(get_timeout())),
-        }
+        })
     }
 
     /// Get peer sockaddr.
     #[inline]
-    pub const fn peer_addr(&self) -> SocketAddr { self.addr }
+    pub fn peer_addr(&self) -> SocketAddr { self.socket.peer_addr().unwrap() }
 
     /// Get local sockaddr.
     #[inline]
@@ -53,15 +53,20 @@ impl AsyncRead for UdpStreamRemote {
     ) -> Poll<Result<()>> {
         let this = self.get_mut();
 
-        if let Poll::Ready(x) = this.socket.poll_recv_from(cx, buf) {
+        if let Poll::Ready(result) = this.socket.poll_recv(cx, buf) {
             // reset timer
             this.timeout.as_mut().reset(Instant::now() + get_timeout());
 
-            return Poll::Ready(x.map(|_| ()));
+            return match result {
+                Ok(_) => Poll::Ready(Ok(())),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
+                Err(e) => Poll::Ready(Err(e)),
+            };
         }
 
         // EOF
         if this.timeout.as_mut().poll(cx).is_ready() {
+            buf.clear();
             return Poll::Ready(Ok(()));
         }
 
@@ -72,7 +77,7 @@ impl AsyncRead for UdpStreamRemote {
 impl AsyncWrite for UdpStreamRemote {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         let this = self.get_mut();
-        this.socket.poll_send_to(cx, buf, this.addr)
+        this.socket.poll_send(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<()>> {

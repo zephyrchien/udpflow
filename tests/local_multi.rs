@@ -43,13 +43,14 @@ async fn client(laddr: &'static str, idx: usize) {
 }
 
 async fn server() {
-    let socket = UdpSocket::bind(BIND).await.unwrap();
-    let listener = UdpListener::new(socket);
+    let addr = BIND.parse::<SocketAddr>().unwrap();
+    let listener = UdpListener::new(addr).unwrap();
 
     let mut buf = vec![0u8; 0x2000];
     let mut idx = 0;
 
-    while let Ok((stream, addr)) = listener.accept(&mut buf).await {
+    loop {
+        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
         println!("server: handle {}", addr);
         tokio::spawn(handle(stream, idx));
         idx += 1;

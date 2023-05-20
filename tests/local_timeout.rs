@@ -44,12 +44,13 @@ async fn client() {
 }
 
 async fn server() {
-    let socket = UdpSocket::bind(BIND).await.unwrap();
-    let listener = UdpListener::new(socket);
+    let addr = BIND.parse::<SocketAddr>().unwrap();
+    let listener = UdpListener::new(addr).unwrap();
 
     let mut buf = vec![0u8; 0x2000];
 
-    while let Ok((stream, addr)) = listener.accept(&mut buf).await {
+    loop {
+        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
         assert_eq!(addr, SENDER.parse().unwrap());
         tokio::spawn(handle(stream));
     }

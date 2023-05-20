@@ -37,20 +37,22 @@ async fn client() {
 }
 
 async fn relay_server() {
-    let socket = UdpSocket::bind(BIND).await.unwrap();
-    let listener = UdpListener::new(socket);
+    let addr = BIND.parse::<SocketAddr>().unwrap();
+    let listener = UdpListener::new(addr).unwrap();
 
     let mut buf = vec![0u8; 0x2000];
 
-    while let Ok((stream, addr)) = listener.accept(&mut buf).await {
+    loop {
+        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
         assert_eq!(addr, SENDER.parse().unwrap());
         tokio::spawn(handle(stream));
     }
 }
 
 async fn handle(mut stream1: UdpStreamLocal) {
-    let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
-    let mut stream2 = UdpStreamRemote::new(socket, RECVER.parse().unwrap());
+    let local = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
+    let remote = RECVER.parse::<SocketAddr>().unwrap();
+    let mut stream2 = UdpStreamRemote::new(local, remote).await.unwrap();
     let _ = tokio::io::copy_bidirectional(&mut stream1, &mut stream2).await;
 }
 

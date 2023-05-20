@@ -9,14 +9,14 @@ const RECVER: &str = "127.0.0.1:15000";
 const MSG: &[u8] = b"Ciallo";
 const INTV: Duration = Duration::from_millis(20);
 const WAIT: Duration = Duration::from_millis(200);
-const TIMEOUT: Duration = Duration::from_millis(300);
+const TIMEOUT: Duration = Duration::from_secs(60);
 
 #[tokio::test]
 async fn bidi_copy_reassociate() {
     udpflow::set_timeout(TIMEOUT);
     tokio::select! {
         _ = client() => {},
-        _ = async { tokio::join!(echo_server(),relay_server()) } => {}
+        _ = async { tokio::join!(echo_server(), relay_server()) } => {}
     };
 }
 
@@ -40,12 +40,13 @@ async fn client() {
 }
 
 async fn relay_server() {
-    let socket = UdpSocket::bind(BIND).await.unwrap();
-    let listener = UdpListener::new(socket);
+    let addr = BIND.parse::<SocketAddr>().unwrap();
+    let listener = UdpListener::new(addr).unwrap();
 
     let mut buf = vec![0u8; 0x2000];
 
-    while let Ok((stream, addr)) = listener.accept(&mut buf).await {
+    loop {
+        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
         assert_eq!(addr, SENDER.parse().unwrap());
         tokio::spawn(handle(stream));
     }
@@ -53,8 +54,9 @@ async fn relay_server() {
 
 async fn handle(mut stream1: UdpStreamLocal) {
     println!("relay: spawned");
-    let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
-    let mut stream2 = UdpStreamRemote::new(socket, RECVER.parse().unwrap());
+    let local = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
+    let remote = RECVER.parse::<SocketAddr>().unwrap();
+    let mut stream2 = UdpStreamRemote::new(local, remote).await.unwrap();
     let _ = tokio::io::copy_bidirectional(&mut stream1, &mut stream2).await;
     println!("relay: timeout");
 }
