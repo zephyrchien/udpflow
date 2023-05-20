@@ -87,6 +87,7 @@ pub(crate) fn new_udp_socket(local_addr: std::net::SocketAddr) -> std::io::Resul
         Some(socket2::Protocol::UDP),
     )?;
     udp_sock.set_reuse_address(true)?;
+    #[cfg(not(windows))]
     udp_sock.set_reuse_port(true)?;
     udp_sock.set_nonblocking(true)?;
     udp_sock.bind(&socket2::SockAddr::from(local_addr))?;
