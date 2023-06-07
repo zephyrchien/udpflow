@@ -46,23 +46,30 @@ async fn server() {
     let addr = BIND.parse::<SocketAddr>().unwrap();
     let listener = UdpListener::new(addr).unwrap();
 
-    let mut buf = vec![0u8; 0x2000];
     let mut idx = 0;
 
     loop {
-        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
+        let mut buf = vec![0u8; 0x2000];
+        let (n, stream, addr) = listener.accept(&mut buf).await.unwrap();
+        buf.truncate(n);
         println!("server: handle {}", addr);
-        tokio::spawn(handle(stream, idx));
+        tokio::spawn(handle(stream, idx, buf));
         idx += 1;
     }
 }
 
-async fn handle(mut stream: UdpStreamLocal, idx: usize) {
+async fn handle(mut stream: UdpStreamLocal, idx: usize, first_packet: Vec<u8>) {
     let mut buf = [0u8; 32];
     let mut i = 0;
     loop {
         println!("handle[{idx}]: recv[{}]..", i);
-        let n = stream.read(&mut buf).await.unwrap();
+        let n = if i == 0 {
+            let len = buf.len().min(first_packet.len());
+            buf[..len].copy_from_slice(&first_packet[..len]);
+            len
+        } else {
+            stream.read(&mut buf).await.unwrap()
+        };
         assert_eq!(&buf[..n], MSG);
 
         println!("handle[{idx}]: send[{}]..", i);

@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 use tokio::time::sleep;
 use tokio::net::{TcpStream, TcpListener};
 use udpflow::{UdpSocket, UdpListener, UdpStreamLocal, UdpStreamRemote, UotStream};
@@ -49,18 +50,19 @@ async fn relay_server1() {
     let addr = RELAY1.parse::<SocketAddr>().unwrap();
     let listener = UdpListener::new(addr).unwrap();
 
-    let mut buf = vec![0u8; 0x2000];
-
     loop {
-        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
+        let mut buf = vec![0u8; 0x2000];
+        let (n, stream, addr) = listener.accept(&mut buf).await.unwrap();
+        buf.truncate(n);
         assert_eq!(addr, SENDER.parse().unwrap());
-        tokio::spawn(handle1(stream));
+        tokio::spawn(handle1(stream, buf));
     }
 }
 
 // recv packet, send framed data
-async fn handle1(mut stream1: UdpStreamLocal) {
+async fn handle1(mut stream1: UdpStreamLocal, buf: Vec<u8>) {
     let mut stream2 = UotStream::new(TcpStream::connect(RELAY2).await.unwrap());
+    stream2.write_all(&buf).await.unwrap();
     let _ = tokio::io::copy_bidirectional(&mut stream1, &mut stream2).await;
 }
 

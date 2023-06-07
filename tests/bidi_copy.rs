@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::{time::sleep, io::AsyncWriteExt};
 use udpflow::{UdpSocket, UdpListener, UdpStreamLocal, UdpStreamRemote};
 
 const BIND: &str = "127.0.0.1:10000";
@@ -40,19 +40,20 @@ async fn relay_server() {
     let addr = BIND.parse::<SocketAddr>().unwrap();
     let listener = UdpListener::new(addr).unwrap();
 
-    let mut buf = vec![0u8; 0x2000];
-
     loop {
-        let (stream, addr) = listener.accept(&mut buf).await.unwrap();
+        let mut buf = vec![0u8; 0x2000];
+        let (n, stream, addr) = listener.accept(&mut buf).await.unwrap();
+        buf.truncate(n);
         assert_eq!(addr, SENDER.parse().unwrap());
-        tokio::spawn(handle(stream));
+        tokio::spawn(handle(stream, buf));
     }
 }
 
-async fn handle(mut stream1: UdpStreamLocal) {
+async fn handle(mut stream1: UdpStreamLocal, buf: Vec<u8>) {
     let local = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
     let remote = RECVER.parse::<SocketAddr>().unwrap();
     let mut stream2 = UdpStreamRemote::new(local, remote).await.unwrap();
+    stream2.write_all(&buf).await.unwrap();
     let _ = tokio::io::copy_bidirectional(&mut stream1, &mut stream2).await;
 }
 
