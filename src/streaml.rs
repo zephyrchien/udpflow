@@ -1,17 +1,15 @@
 use std::io::Result;
-use std::sync::Arc;
-use std::net::SocketAddr;
+
+use std::net::{SocketAddr};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use tokio::net::UdpSocket;
 use tokio::time::{sleep, Sleep, Instant};
-use tokio::sync::mpsc::Receiver;
 use tokio::io::{ReadBuf, AsyncRead, AsyncWrite};
 
-use crate::sockmap::{SockMap, Packet};
-use crate::get_timeout;
+use crate::{get_timeout, new_udp_socket};
 
 /// Udp stream accepted from local listener.
 ///
@@ -19,32 +17,28 @@ use crate::get_timeout;
 /// during a period of time. This is treated as `EOF`, and
 /// a `Ok(0)` will be returned.
 pub struct UdpStreamLocal {
-    rx: Receiver<Packet>,
-    socket: Arc<UdpSocket>,
+    socket: UdpSocket,
     timeout: Pin<Box<Sleep>>,
-    sockmap: SockMap,
-    addr: SocketAddr,
 }
 
 impl UdpStreamLocal {
-    pub(crate) fn new(
-        rx: Receiver<Packet>,
-        socket: Arc<UdpSocket>,
-        sockmap: SockMap,
-        addr: SocketAddr,
-    ) -> Self {
-        Self {
-            rx,
+    /// Create from a **bound** udp socket.
+    #[inline]
+    pub(crate) async fn new(
+        local_addr: SocketAddr,
+        remote_addr: SocketAddr,
+    ) -> std::io::Result<Self> {
+        let socket = new_udp_socket(local_addr)?;
+        socket.connect(remote_addr).await?;
+        Ok(Self {
             socket,
-            addr,
-            sockmap,
             timeout: Box::pin(sleep(get_timeout())),
-        }
+        })
     }
 
     /// Get peer sockaddr.
     #[inline]
-    pub const fn peer_addr(&self) -> SocketAddr { self.addr }
+    pub fn peer_addr(&self) -> SocketAddr { self.socket.peer_addr().unwrap() }
 
     /// Get local sockaddr.
     #[inline]
@@ -52,14 +46,7 @@ impl UdpStreamLocal {
 
     /// Get inner udp socket.
     #[inline]
-    pub const fn inner_socket(&self) -> &Arc<UdpSocket> { &self.socket }
-}
-
-impl Drop for UdpStreamLocal {
-    fn drop(&mut self) {
-        self.sockmap.remove(&self.addr);
-        // left elements are popped
-    }
+    pub const fn inner_socket(&self) -> &UdpSocket { &self.socket }
 }
 
 impl AsyncRead for UdpStreamLocal {
@@ -70,17 +57,20 @@ impl AsyncRead for UdpStreamLocal {
     ) -> Poll<Result<()>> {
         let this = self.get_mut();
 
-        if let Poll::Ready(Some(pkt)) = this.rx.poll_recv(cx) {
-            buf.put_slice(&pkt);
-
+        if let Poll::Ready(result) = this.socket.poll_recv(cx, buf) {
             // reset timer
             this.timeout.as_mut().reset(Instant::now() + get_timeout());
 
-            return Poll::Ready(Ok(()));
+            return match result {
+                Ok(_) => Poll::Ready(Ok(())),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => Poll::Pending,
+                Err(e) => Poll::Ready(Err(e)),
+            };
         }
 
         // EOF
         if this.timeout.as_mut().poll(cx).is_ready() {
+            buf.clear();
             return Poll::Ready(Ok(()));
         }
 
@@ -91,7 +81,7 @@ impl AsyncRead for UdpStreamLocal {
 impl AsyncWrite for UdpStreamLocal {
     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<Result<usize>> {
         let this = self.get_mut();
-        this.socket.poll_send_to(cx, buf, this.addr)
+        this.socket.poll_send(cx, buf)
     }
 
     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<()>> {
@@ -99,7 +89,6 @@ impl AsyncWrite for UdpStreamLocal {
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<Result<()>> {
-        self.get_mut().rx.close();
         Poll::Ready(Ok(()))
     }
 }

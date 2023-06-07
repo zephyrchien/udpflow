@@ -20,9 +20,9 @@ async fn remote() {
 async fn client() {
     sleep(WAIT).await;
 
-    let addr = BIND.parse::<SocketAddr>().unwrap();
-    let socket = UdpSocket::bind(SENDER).await.unwrap();
-    let mut stream = UdpStreamRemote::new(socket, addr);
+    let local = SENDER.parse::<SocketAddr>().unwrap();
+    let remote = BIND.parse::<SocketAddr>().unwrap();
+    let mut stream = UdpStreamRemote::new(local, remote).await.unwrap();
     let mut buf = [0u8; 32];
 
     for i in 0..5 {

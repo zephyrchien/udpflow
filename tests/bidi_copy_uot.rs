@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::time::Duration;
+use tokio::io::AsyncWriteExt;
 use tokio::time::sleep;
 use tokio::net::{TcpStream, TcpListener};
 use udpflow::{UdpSocket, UdpListener, UdpStreamLocal, UdpStreamRemote, UotStream};
@@ -16,9 +17,11 @@ async fn bidi_copy_uot() {
     tokio::select! {
         _ = client() => {},
         _ = async {
-            tokio::join!(async {
-                tokio::join!(relay_server1(), relay_server2())
-            }, echo_server())
+            tokio::join!(
+                tokio::spawn(relay_server1()),
+                tokio::spawn(relay_server2()),
+                tokio::spawn(echo_server())
+            )
         } => {}
     };
 }
@@ -44,20 +47,22 @@ async fn client() {
 
 // udp -> tcp
 async fn relay_server1() {
-    let socket = UdpSocket::bind(RELAY1).await.unwrap();
-    let listener = UdpListener::new(socket);
+    let addr = RELAY1.parse::<SocketAddr>().unwrap();
+    let listener = UdpListener::new(addr).unwrap();
 
-    let mut buf = vec![0u8; 0x2000];
-
-    while let Ok((stream, addr)) = listener.accept(&mut buf).await {
+    loop {
+        let mut buf = vec![0u8; 0x2000];
+        let (n, stream, addr) = listener.accept(&mut buf).await.unwrap();
+        buf.truncate(n);
         assert_eq!(addr, SENDER.parse().unwrap());
-        tokio::spawn(handle1(stream));
+        tokio::spawn(handle1(stream, buf));
     }
 }
 
 // recv packet, send framed data
-async fn handle1(mut stream1: UdpStreamLocal) {
+async fn handle1(mut stream1: UdpStreamLocal, buf: Vec<u8>) {
     let mut stream2 = UotStream::new(TcpStream::connect(RELAY2).await.unwrap());
+    stream2.write_all(&buf).await.unwrap();
     let _ = tokio::io::copy_bidirectional(&mut stream1, &mut stream2).await;
 }
 
@@ -65,15 +70,17 @@ async fn handle1(mut stream1: UdpStreamLocal) {
 async fn relay_server2() {
     let listener = TcpListener::bind(RELAY2).await.unwrap();
 
-    while let Ok((stream, _)) = listener.accept().await {
+    loop {
+        let (stream, _) = listener.accept().await.unwrap();
         tokio::spawn(handle2(UotStream::new(stream)));
     }
 }
 
 // recv framed data, send packet
 async fn handle2(mut stream1: UotStream<TcpStream>) {
-    let socket = UdpSocket::bind("0.0.0.0:0").await.unwrap();
-    let mut stream2 = UdpStreamRemote::new(socket, RECVER.parse().unwrap());
+    let local = "0.0.0.0:0".parse::<SocketAddr>().unwrap();
+    let remote = RECVER.parse::<SocketAddr>().unwrap();
+    let mut stream2 = UdpStreamRemote::new(local, remote).await.unwrap();
     let _ = tokio::io::copy_bidirectional(&mut stream1, &mut stream2).await;
 }
 

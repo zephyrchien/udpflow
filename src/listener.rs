@@ -3,52 +3,34 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::net::UdpSocket;
-use tokio::sync::mpsc;
 
-use crate::UdpStreamLocal;
-
-use crate::sockmap::{SockMap, Packet};
+use crate::{UdpStreamLocal, new_udp_socket};
 
 /// Udp packet listener.
 pub struct UdpListener {
     socket: Arc<UdpSocket>,
-    sockmap: SockMap,
 }
 
 impl UdpListener {
     /// Create from a **bound** udp socket.
-    pub fn new(socket: UdpSocket) -> Self {
-        Self {
-            socket: Arc::new(socket),
-            sockmap: SockMap::new(),
-        }
+    pub fn new(local_address: SocketAddr) -> std::io::Result<Self> {
+        Ok(Self {
+            socket: Arc::new(new_udp_socket(local_address)?),
+        })
     }
 
     /// Accept a new stream.
     ///
-    /// A listener must be continuously polled to recv packets or accept new streams.
-    ///
-    /// When receiving a packet from a known peer, this function does not return,
-    /// and the packet will be copied then sent to the associated
+    /// On success, it returns peer stream socket, peer address and
+    /// the number of bytes read.
     /// [`UdpStreamLocal`](super::UdpStreamLocal).  
-    pub async fn accept(&self, buf: &mut [u8]) -> Result<(UdpStreamLocal, SocketAddr)> {
-        loop {
-            let (n, addr) = self.socket.recv_from(buf).await?;
-            debug_assert!(n != 0);
+    pub async fn accept(&self, buf: &mut [u8]) -> Result<(usize, UdpStreamLocal, SocketAddr)> {
+        let (n, addr) = self.socket.recv_from(buf).await?;
 
-            // existed session
-            if let Some(tx) = self.sockmap.get(&addr) {
-                let _ = tx.send(Vec::from(&buf[..n])).await;
-                continue;
-            }
+        debug_assert!(n != 0);
 
-            // new session
-            let (tx, rx) = mpsc::channel::<Packet>(32);
-            let _ = tx.send(Vec::from(&buf[..n])).await;
-            self.sockmap.insert(addr, tx);
+        let stream = UdpStreamLocal::new(self.socket.local_addr().unwrap(), addr).await?;
 
-            let stream = UdpStreamLocal::new(rx, self.socket.clone(), self.sockmap.clone(), addr);
-            return Ok((stream, addr));
-        }
+        Ok((n, stream, addr))
     }
 }
